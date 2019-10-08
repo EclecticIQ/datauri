@@ -8,9 +8,9 @@ import urllib.parse
 RE_DATA_URI = re.compile(
     'data:[{unreserved}{reserved}{percent}]+'
     .format(
-        unreserved="A-Za-z0-9-_.~",
-        reserved=":/?#\[\]@!$&'()*+,;=",  # only square brackets are escaped
-        percent='%'))
+        unreserved=r"A-Za-z0-9-_.~",
+        reserved=r":/?#\[\]@!$&'()*+,;=",  # only square brackets are escaped
+        percent=r'%'))
 
 
 class DataURIError(ValueError):
@@ -47,21 +47,30 @@ class ParsedDataURI:
         return hash((self.media_type, self.data))
 
 
-def parse(uri):
+def parse(uri, strict=True):
     """
     Parse a 'data:' URI.
 
     Returns a ParsedDataURI instance.
     """
+    if not strict:
+        uri = uri.lstrip()
     if not uri.startswith('data:'):
         raise DataURIError('invalid data uri')
     s = uri[5:]
     if not s or ',' not in s:
         raise DataURIError('invalid data uri')
+
     media_type, _, raw_data = s.partition(',')
-    is_base64_encoded = media_type.endswith(';base64')
-    if is_base64_encoded:
+    # https://github.com/eclecticiq/python-data-uri/issues/7
+    if not strict:
+        media_type = ''.join(media_type.split())  # remove all spaces
+
+    if media_type.endswith(';base64'):
         media_type = media_type[:-7]
+        # https://github.com/eclecticiq/python-data-uri/issues/7
+        if not strict:
+            raw_data = ''.join(raw_data.split())  # remove all spaces
         missing_padding = '=' * (-len(raw_data) % 4)
         if missing_padding:
             raw_data += missing_padding
@@ -73,6 +82,7 @@ def parse(uri):
         # Note: unquote_to_bytes() does not raise exceptions for invalid
         # or partial escapes, so there is no error handling here.
         data = urllib.parse.unquote_to_bytes(raw_data)
+
     if not media_type:
         media_type = None
     return ParsedDataURI(media_type, data, uri)
